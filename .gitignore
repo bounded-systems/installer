@@ -2,3 +2,8 @@ node_modules/
 dist/
 dist-cli/
 *.tsbuildinfo
+# bun migrates the committed package-lock.json (kept for the Nix build) into
+# bun.lock on `bun install`; it's derived, so ignore it (keeps the JSR
+# dry-run's git tree clean).
+bun.lock
+bun.lockb
