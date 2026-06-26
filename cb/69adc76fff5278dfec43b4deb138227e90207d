@@ -1,0 +1,27 @@
+.github/workflows/ci.yml
+  s_af04857eb63b13::t_8d914898276fe2 41-43
+.gitignore
+  s_af04857eb63b13::t_375760a17aa703 4
+examples/consumer-smoke.ts
+  s_af04857eb63b13::t_7123ba35678572 1-154
+package.json
+  s_af04857eb63b13::t_45fed1dc1f9310 52-53
+jsr.json
+  s_af04857eb63b13::t_10b07481d62e66 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "cb69adc76fff5278dfec43b4deb138227e90207d",
+  "prompts": {},
+  "sessions": {
+    "s_af04857eb63b13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af44f481-365e-4ef2-874a-ead0644ceb40",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    }
+  }
+}
