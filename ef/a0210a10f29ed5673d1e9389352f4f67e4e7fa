@@ -1,0 +1,19 @@
+.gitignore
+  s_af04857eb63b13::t_1fe5291da9219b 5-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "efa0210a10f29ed5673d1e9389352f4f67e4e7fa",
+  "prompts": {},
+  "sessions": {
+    "s_af04857eb63b13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af44f481-365e-4ef2-874a-ead0644ceb40",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    }
+  }
+}
