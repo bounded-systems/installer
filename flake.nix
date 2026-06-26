@@ -29,7 +29,7 @@
           pname = "bounded-installer";
           version = "0.1.0";
           src = ./.;
-          npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          npmDepsHash = "sha256-MrYaTwBl+LnZcDsj2/atiERdTY1KZy6Kl+uFvVgNxq0=";
           nativeBuildInputs = [ pkgs.makeWrapper ];
           npmBuildScript = "build:cli";
           # Custom install: the CLI runs from its compiled JS with node_modules
