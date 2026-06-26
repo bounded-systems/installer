@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true,
+    "outDir": "./dist-cli",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["bin/**/*.ts", "src/index.ts"]
+}

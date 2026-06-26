@@ -7,14 +7,47 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+    {
+      # Portable home-manager module. From any home-manager config:
+      #   inputs.installer.url = "github:bounded-systems/installer";
+      #   modules = [ installer.homeManagerModules.default ];
+      #   programs.bounded-installer.enable = true;
+      homeManagerModules.bounded-installer = import ./nix/hm-module.nix self;
+      homeManagerModules.default = import ./nix/hm-module.nix self;
+    }
+    // flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
 
-        # The consumer smoke runs against the repo checkout (it needs the
-        # node_modules a prior `bun install` produced — verbspec + zod), not a
-        # hermetic store copy. Same pattern as prx's jsr-sync app: invoked from
-        # $PWD, run from the repo root. `nix run .#smoke`.
+        # The `bounded-installer` CLI: a thin consumer (bin/cli.ts) that wires
+        # real node-backed seams into the installer library and dispatches the
+        # install/doctor verbs over a small TOY catalog (an idempotent state
+        # marker + a read-only git check). The real seam-backed catalog is
+        # prx-m445. Built hermetically: npm ci (deps pinned by npmDepsHash) →
+        # tsc (build:cli) → a node wrapper.
+        bounded-installer = pkgs.buildNpmPackage {
+          pname = "bounded-installer";
+          version = "0.1.0";
+          src = ./.;
+          npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          npmBuildScript = "build:cli";
+          # Custom install: the CLI runs from its compiled JS with node_modules
+          # (verbspec + zod) resolved alongside. buildNpmPackage's default
+          # bin/files install doesn't apply — the published package ships no bin.
+          dontNpmPrune = true;
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib/bounded-installer
+            cp -r dist-cli node_modules package.json $out/lib/bounded-installer/
+            makeWrapper ${pkgs.nodejs}/bin/node $out/bin/bounded-installer \
+              --add-flags "$out/lib/bounded-installer/dist-cli/bin/cli.js"
+            runHook postInstall
+          '';
+        };
+
+        # The consumer smoke (14 checks) run against the repo checkout — same
+        # $PWD pattern as prx's jsr-sync app. `nix run .#smoke`.
         smoke = pkgs.writeShellApplication {
           name = "installer-smoke";
           runtimeInputs = [ pkgs.bun pkgs.nodejs ];
@@ -25,16 +58,26 @@
         };
       in
       {
-        # `nix develop` → the toolchain this repo's CI uses (bun) plus node +
-        # tsc for the local `smoke:node` runner and editor tooling.
-        devShells.default = pkgs.mkShell {
-          buildInputs = [ pkgs.bun pkgs.nodejs pkgs.typescript ];
+        packages = {
+          bounded-installer = bounded-installer;
+          default = bounded-installer;
         };
 
-        # `nix run .#smoke` → the consumer example end-to-end (14 checks).
-        apps.smoke = {
-          type = "app";
-          program = "${smoke}/bin/installer-smoke";
+        # `nix run` → the CLI; `nix run .#smoke` → the consumer example.
+        apps = {
+          default = {
+            type = "app";
+            program = "${bounded-installer}/bin/bounded-installer";
+          };
+          smoke = {
+            type = "app";
+            program = "${smoke}/bin/installer-smoke";
+          };
+        };
+
+        # `nix develop` → bun + node + tsc (CI toolchain + local runners).
+        devShells.default = pkgs.mkShell {
+          buildInputs = [ pkgs.bun pkgs.nodejs pkgs.typescript ];
         };
       });
 }

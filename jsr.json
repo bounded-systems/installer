@@ -10,7 +10,9 @@
     "exclude": [
       "**/__tests__/**",
       "examples/**",
-      "dist/**"
+      "bin/**",
+      "dist/**",
+      "dist-cli/**"
     ]
   }
 }
