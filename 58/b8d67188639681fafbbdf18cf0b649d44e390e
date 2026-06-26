@@ -1,0 +1,35 @@
+jsr.json
+  s_af04857eb63b13::t_357b49e121f2fb 13-15
+nix/hm-module.nix
+  s_af04857eb63b13::t_b757301ad4c264 1-21
+package.json
+  s_af04857eb63b13::t_2f7a5367a817e6 52
+  s_af04857eb63b13::t_6b280edb33cd8c 64
+.gitignore
+  s_af04857eb63b13::t_30faf1f0535782 3
+bin/cli.ts
+  s_af04857eb63b13::t_3dc2daafe7b4c2 1-94
+flake.nix
+  s_af04857eb63b13::t_6ec194cdd76cdd 10-18,22-50,61-63,66-80
+tsconfig.cli.json
+  s_af04857eb63b13::t_1a793bced01700 1-9,11-13
+  s_af04857eb63b13::t_32fe3c07d46c7e 10
+package-lock.json
+  s_af04857eb63b13::t_2737193cd650d1 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "58b8d67188639681fafbbdf18cf0b649d44e390e",
+  "prompts": {},
+  "sessions": {
+    "s_af04857eb63b13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "af44f481-365e-4ef2-874a-ead0644ceb40",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    }
+  }
+}
