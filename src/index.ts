@@ -72,7 +72,7 @@ export const InstallInput = z.object({
     .enum(["host", "vm", "box"])
     .default("host")
     .describe("provisioning target profile"),
-  dryRun: z.boolean().default(false).describe("plan only; perform no effects"),
+  "dry-run": z.boolean().default(false).describe("plan only; perform no effects"),
   force: z.boolean().default(false).describe("re-apply even when the probe reports satisfied"),
 });
 
@@ -126,7 +126,7 @@ export function makeInstall(config: InstallerConfig): AnyVerbSpec {
           results.push({ id: c.id, status: "skipped", detail: "already satisfied" });
           continue;
         }
-        if (input.dryRun) {
+        if (input["dry-run"]) {
           results.push({ id: c.id, status: "planned" });
           continue;
         }
@@ -141,7 +141,7 @@ export function makeInstall(config: InstallerConfig): AnyVerbSpec {
           });
         }
       }
-      return { profile: input.profile, dryRun: input.dryRun, results };
+      return { profile: input.profile, dryRun: input["dry-run"], results };
     },
 
     // ── CLI-only projections (MCP/OpenAPI/NDJSON consume `output`, not these) ──
