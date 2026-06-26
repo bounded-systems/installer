@@ -1,0 +1,64 @@
+{
+  "name": "@bounded-systems/installer",
+  "version": "0.1.0",
+  "description": "Spec-driven provisioning surface: author install/doctor once as VerbSpec verbs, project to CLI, MCP, OpenAPI, and Anthropic tool surfaces; effects delegated to capability seams",
+  "bounded": {
+    "tagline": "Spec-driven provisioning surface: install/doctor as VerbSpec verbs, effects delegated to capability seams",
+    "kind": "guest"
+  },
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bounded-systems/installer.git"
+  },
+  "homepage": "https://github.com/bounded-systems/installer#readme",
+  "bugs": {
+    "url": "https://github.com/bounded-systems/installer/issues"
+  },
+  "keywords": [
+    "installer",
+    "provisioning",
+    "verbspec",
+    "cli",
+    "zod",
+    "mcp",
+    "openapi",
+    "anthropic-tools",
+    "capability-security",
+    "spec-driven"
+  ],
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build"
+  },
+  "peerDependencies": {
+    "@bounded-systems/verbspec": "^0.3.1",
+    "zod": "^3.25.0 || ^4.0.0"
+  },
+  "devDependencies": {
+    "@bounded-systems/verbspec": "npm:@jsr/bounded-systems__verbspec@^0.3.1",
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
+  }
+}
