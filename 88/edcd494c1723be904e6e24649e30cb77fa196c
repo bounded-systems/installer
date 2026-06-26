@@ -1,0 +1,35 @@
+.github/workflows/publish-jsr.yml
+  s_f7964a9f1fd108::t_af190287d7733e 1-46
+.npmrc
+  s_8bfe0e8de6557c::t_fc280951072929 1
+package.json
+  s_f7964a9f1fd108::t_b258b43a6767c8 1-64
+src/__tests__/extractability.test.ts
+  s_f7964a9f1fd108::t_7b29c8f314bbaf 1-68
+src/__tests__/index.test.ts
+  s_f7964a9f1fd108::t_934ba1e0ebdcd5 1-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "88edcd494c1723be904e6e24649e30cb77fa196c",
+  "prompts": {},
+  "sessions": {
+    "s_8bfe0e8de6557c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "159cecef-b114-4932-b219-6b198cbf9abd",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    },
+    "s_f7964a9f1fd108": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7c00f33a-b14b-440b-a3d6-2e72a8daec8c",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    }
+  }
+}
