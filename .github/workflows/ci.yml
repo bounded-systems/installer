@@ -38,5 +38,8 @@ jobs:
       - name: Test
         run: bun test
 
+      - name: Smoke (consumer example)
+        run: bun examples/consumer-smoke.ts
+
       - name: JSR publish dry-run
         run: bunx jsr publish --dry-run --allow-slow-types
