@@ -27,9 +27,9 @@
         # tsc (build:cli) → a node wrapper.
         bounded-installer = pkgs.buildNpmPackage {
           pname = "bounded-installer";
-          version = "0.1.0";
+          version = "0.2.0";
           src = ./.;
-          npmDepsHash = "sha256-MrYaTwBl+LnZcDsj2/atiERdTY1KZy6Kl+uFvVgNxq0=";
+          npmDepsHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
           nativeBuildInputs = [ pkgs.makeWrapper ];
           npmBuildScript = "build:cli";
           # Custom install: the CLI runs from its compiled JS with node_modules
