@@ -63,6 +63,7 @@
     "@bounded-systems/fs": "npm:@jsr/bounded-systems__fs@^0.2.0",
     "@bounded-systems/host": "npm:@jsr/bounded-systems__host@^0.2.0",
     "@bounded-systems/proc": "npm:@jsr/bounded-systems__proc@^0.2.0",
+    "@bounded-systems/seam-check": "npm:@jsr/bounded-systems__seam-check@^0.1.0",
     "@bounded-systems/verbspec": "npm:@jsr/bounded-systems__verbspec@^0.3.1",
     "@types/bun": "^1.3.14",
     "@types/node": "^22.0.0",
