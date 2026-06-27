@@ -9,126 +9,115 @@ import {
   type DoctorOutput,
 } from "@bounded-systems/installer";
 
-// A fake capability slice that records effects instead of performing them — the
-// installer only ever talks to InstallDeps, so a test wires its own and asserts
-// on what the verbs *tried* to do. No filesystem, no subprocess, no env.
-function fakeDeps(): { deps: InstallDeps; writes: string[]; runs: string[] } {
-  const writes: string[] = [];
-  const runs: string[] = [];
+// Fake seams mirroring the real @bounded-systems/{fs,proc,host,env} contracts.
+// The fs seam is read+remove only, so installs run commands through proc; the
+// fake's `mkdir` mutates an in-memory fs and tests assert on that state.
+function fakeSeams(): { deps: InstallDeps; present: Set<string>; runs: string[] } {
   const present = new Set<string>();
+  const runs: string[] = [];
   return {
-    writes,
+    present,
     runs,
     deps: {
       fs: {
-        exists: async (p) => present.has(p),
-        writeFile: async (p, _body) => {
-          writes.push(p);
-          present.add(p);
+        statPath: (p) =>
+          present.has(p) ? { sizeBytes: 0, mtimeMs: 0, isFile: false, isDirectory: true } : null,
+        removeFile: (p) => {
+          present.delete(p);
         },
       },
       proc: {
-        run: async (cmd, args) => {
-          runs.push([cmd, ...args].join(" "));
-          return { code: 0, stderr: "" };
+        run: (cmd) => {
+          runs.push(cmd.join(" "));
+          if (cmd[0] === "mkdir") present.add(cmd[cmd.length - 1] ?? "");
+          if (cmd[0] === "git") return { stdout: "git version 2.x", stderr: "", status: 0 };
+          return { stdout: "", stderr: "", status: 0 };
         },
       },
-      host: { platform: () => "linux", arch: () => "arm64" },
+      host: { homeDir: () => "/home/test", hostName: () => "testhost" },
       env: { get: () => undefined },
     },
   };
 }
 
-// A two-component catalog: `alpha` is never satisfied (always installs),
-// `beta` reports satisfied (always skips unless --force).
-function catalog(): readonly Component[] {
+const DIR = "/home/test/.local/state/demo";
+
+// state-dir: created by `mkdir -p` via proc. git: read-only presence check.
+function catalog(): Component[] {
   return [
     {
-      id: "alpha",
-      probe: async () => false,
-      apply: async (d) => {
-        await d.fs.writeFile("/etc/alpha.conf", "x");
+      id: "state-dir",
+      probe: (d) => d.fs.statPath(`${d.host.homeDir()}/.local/state/demo`)?.isDirectory === true,
+      apply: (d) => {
+        const r = d.proc.run(["mkdir", "-p", `${d.host.homeDir()}/.local/state/demo`]);
+        if (r.status !== 0) throw new Error(r.stderr || "mkdir failed");
       },
     },
     {
-      id: "beta",
-      probe: async () => true,
-      apply: async (d) => {
-        await d.proc.run("provision-beta", []);
+      id: "git",
+      probe: (d) => d.proc.run(["git", "--version"]).status === 0,
+      apply: () => {
+        throw new Error("install git via your system package manager");
       },
     },
   ];
 }
 
 describe("install verb", () => {
-  test("installs unsatisfied, skips satisfied, performs effects through deps", async () => {
-    const f = fakeDeps();
+  test("installs unsatisfied via proc, skips satisfied", async () => {
+    const f = fakeSeams();
     const reg = installRegistry({ catalog: catalog(), deps: () => f.deps });
     const res = await dispatch(reg, ["install"]);
     expect(res.kind).toBe("ok");
     const out = (res as { output: InstallOutput }).output;
     expect(out.results).toEqual([
-      { id: "alpha", status: "installed" },
-      { id: "beta", status: "skipped", detail: "already satisfied" },
+      { id: "state-dir", status: "installed" },
+      { id: "git", status: "skipped", detail: "already satisfied" },
     ]);
-    expect(f.writes).toEqual(["/etc/alpha.conf"]); // alpha's effect ran
-    expect(f.runs).toEqual([]); // beta was skipped — no effect
+    expect(f.runs).toContain(`mkdir -p ${DIR}`); // effect ran through the proc seam
+    expect(f.present.has(DIR)).toBe(true);
   });
 
-  test("--dry-run plans without performing effects", async () => {
-    const f = fakeDeps();
+  test("--dry-run plans without mutating", async () => {
+    const f = fakeSeams();
     const reg = installRegistry({ catalog: catalog(), deps: () => f.deps });
     const res = await dispatch(reg, ["install", "--dry-run"]);
     const out = (res as { output: InstallOutput }).output;
     expect(out.dryRun).toBe(true);
     expect(out.results.map((r) => r.status)).toEqual(["planned", "skipped"]);
-    expect(f.writes).toEqual([]); // nothing written in dry-run
-  });
-
-  test("--force re-applies a satisfied component", async () => {
-    const f = fakeDeps();
-    const reg = installRegistry({ catalog: catalog(), deps: () => f.deps });
-    const res = await dispatch(reg, ["install", "beta", "--force"]);
-    const out = (res as { output: InstallOutput }).output;
-    expect(out.results).toEqual([{ id: "beta", status: "installed" }]);
-    expect(f.runs).toEqual(["provision-beta"]);
+    expect(f.runs.some((c) => c.startsWith("mkdir"))).toBe(false); // no mutation
+    expect(f.present.has(DIR)).toBe(false);
   });
 
   test("a failing apply is captured, not thrown", async () => {
-    const f = fakeDeps();
-    const boom: Component = {
-      id: "boom",
-      probe: async () => false,
-      apply: async () => {
-        throw new Error("disk full");
-      },
-    };
-    const reg = installRegistry({ catalog: [boom], deps: () => f.deps });
-    const res = await dispatch(reg, ["install"]);
+    const f = fakeSeams();
+    const reg = installRegistry({ catalog: catalog(), deps: () => f.deps });
+    const res = await dispatch(reg, ["install", "git", "--force"]);
     const out = (res as { output: InstallOutput }).output;
-    expect(out.results).toEqual([{ id: "boom", status: "failed", detail: "disk full" }]);
+    expect(out.results).toEqual([
+      { id: "git", status: "failed", detail: "install git via your system package manager" },
+    ]);
   });
 });
 
 describe("doctor verb", () => {
   test("reports per-component satisfaction, read-only", async () => {
-    const f = fakeDeps();
+    const f = fakeSeams();
     const reg = installRegistry({ catalog: catalog(), deps: () => f.deps });
     const res = await dispatch(reg, ["doctor"]);
     const out = (res as { output: DoctorOutput }).output;
     expect(out.ok).toBe(false);
     expect(out.checks).toEqual([
-      { id: "alpha", satisfied: false },
-      { id: "beta", satisfied: true },
+      { id: "state-dir", satisfied: false },
+      { id: "git", satisfied: true },
     ]);
-    expect(f.writes).toEqual([]); // doctor performs no effects
-    expect(f.runs).toEqual([]);
+    expect(f.present.has(DIR)).toBe(false); // doctor creates nothing
   });
 });
 
 describe("surface projection", () => {
   test("the registry projects to an MCP toolset", () => {
-    const f = fakeDeps();
+    const f = fakeSeams();
     const tools = toMcpToolset(installRegistry({ catalog: catalog(), deps: () => f.deps }));
     expect(tools.map((t) => t.name).sort()).toEqual(["doctor", "install"]);
     for (const t of tools) expect(t.inputSchema).toBeDefined();

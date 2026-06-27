@@ -1,11 +1,11 @@
 /**
  * Consumer smoke test / executable usage example.
  *
- * Runs the README's usage shape end-to-end: a downstream consumer supplies a
- * catalog + a `deps` factory, then dispatches `install` / `doctor` and projects
- * the agent + HTTP surfaces — all from one registry. The `deps` here are fakes
- * that *record* effects instead of performing them, so the example asserts that
- * effects flow only through the injected capability slice and never escape it.
+ * Runs the README's usage shape end-to-end with FAKE seams (matching the real
+ * @bounded-systems/{fs,proc,host,env} contracts) that record effects instead of
+ * performing them. The filesystem seam is read+remove only, so installs run
+ * COMMANDS through `proc` — the fake's `mkdir` mutates an in-memory fs and the
+ * assertions check that state, never raw effects on the host.
  *
  * Run:  bun examples/consumer-smoke.ts   (exits non-zero on any failure)
  */
@@ -26,69 +26,76 @@ function eq(name: string, got: unknown, want: unknown): void {
   }
 }
 
-// A fake capability slice — records effects instead of performing them. No
-// filesystem, no subprocess, no env: the installer only ever talks to InstallDeps.
-function fakeDeps(): { deps: InstallDeps; writes: string[]; runs: string[] } {
-  const writes: string[] = [];
-  const runs: string[] = [];
+// Fake seams mirroring the real contracts. `present` is the in-memory fs;
+// `mkdir` (run via proc) is the only mutation; `git --version` is a read.
+function fakeSeams(): { deps: InstallDeps; present: Set<string>; runs: string[] } {
   const present = new Set<string>();
+  const runs: string[] = [];
   return {
-    writes,
+    present,
     runs,
     deps: {
       fs: {
-        exists: async (p) => present.has(p),
-        writeFile: async (p) => {
-          writes.push(p);
-          present.add(p);
+        statPath: (p) =>
+          present.has(p)
+            ? { sizeBytes: 0, mtimeMs: 0, isFile: false, isDirectory: true }
+            : null,
+        removeFile: (p) => {
+          present.delete(p);
         },
       },
       proc: {
-        run: async (cmd, args) => {
-          runs.push([cmd, ...args].join(" "));
-          return { code: 0, stderr: "" };
+        run: (cmd) => {
+          runs.push(cmd.join(" "));
+          if (cmd[0] === "mkdir") present.add(cmd[cmd.length - 1] ?? "");
+          if (cmd[0] === "git") return { stdout: "git version 2.x", stderr: "", status: 0 };
+          return { stdout: "", stderr: "", status: 0 };
         },
       },
-      host: { platform: () => "linux", arch: () => "arm64" },
+      host: { homeDir: () => "/home/test", hostName: () => "testhost" },
       env: { get: () => undefined },
     },
   };
 }
 
-// alpha: never satisfied (installs). beta: satisfied (skips unless --force).
+const DIR = "/home/test/.local/state/demo";
+
+// state-dir: created by `mkdir -p` via proc (the fs seam can't write).
+// git: read-only presence check; apply can't install it.
 const catalog = (): Component[] => [
   {
-    id: "alpha",
-    probe: async () => false,
-    apply: async (d) => {
-      await d.fs.writeFile("/etc/alpha.conf", "x");
+    id: "state-dir",
+    probe: (d) => d.fs.statPath(`${d.host.homeDir()}/.local/state/demo`)?.isDirectory === true,
+    apply: (d) => {
+      const r = d.proc.run(["mkdir", "-p", `${d.host.homeDir()}/.local/state/demo`]);
+      if (r.status !== 0) throw new Error(r.stderr || "mkdir failed");
     },
   },
   {
-    id: "beta",
-    probe: async () => true,
-    apply: async (d) => {
-      await d.proc.run("provision-beta", []);
+    id: "git",
+    probe: (d) => d.proc.run(["git", "--version"]).status === 0,
+    apply: () => {
+      throw new Error("install git via your system package manager");
     },
   },
 ];
 
-// 1. install: alpha installs (effect fires), beta skips (no effect).
+// 1. install: state-dir created via proc mkdir, git already present → skipped.
 {
-  const f = fakeDeps();
+  const f = fakeSeams();
   const r = await dispatch(installRegistry({ catalog: catalog(), deps: () => f.deps }), ["install"]);
   const out = (r as { output: { results: unknown } }).output;
   eq("install — statuses", out.results, [
-    { id: "alpha", status: "installed" },
-    { id: "beta", status: "skipped", detail: "already satisfied" },
+    { id: "state-dir", status: "installed" },
+    { id: "git", status: "skipped", detail: "already satisfied" },
   ]);
-  eq("install — alpha effect through deps.fs", f.writes, ["/etc/alpha.conf"]);
-  eq("install — beta skipped, no proc effect", f.runs, []);
+  eq("install — effect ran via proc mkdir", f.runs.includes(`mkdir -p ${DIR}`), true);
+  eq("install — dir now exists in the fake fs", f.present.has(DIR), true);
 }
 
-// 2. dry-run: plans, performs nothing.
+// 2. dry-run: plans, runs no mutation (probes may still read via proc/fs).
 {
-  const f = fakeDeps();
+  const f = fakeSeams();
   const r = await dispatch(
     installRegistry({ catalog: catalog(), deps: () => f.deps }),
     ["install", "--dry-run"],
@@ -96,56 +103,40 @@ const catalog = (): Component[] => [
   const out = (r as { output: { dryRun: boolean; results: { status: string }[] } }).output;
   eq("dry-run — flag honored", out.dryRun, true);
   eq("dry-run — statuses planned/skipped", out.results.map((x) => x.status), ["planned", "skipped"]);
-  eq("dry-run — zero effects", [f.writes.length, f.runs.length], [0, 0]);
+  eq("dry-run — no mkdir mutation", f.runs.some((c) => c.startsWith("mkdir")), false);
+  eq("dry-run — dir not created", f.present.has(DIR), false);
 }
 
 // 3. --force re-applies a satisfied component.
 {
-  const f = fakeDeps();
+  const f = fakeSeams();
   const r = await dispatch(
     installRegistry({ catalog: catalog(), deps: () => f.deps }),
-    ["install", "beta", "--force"],
+    ["install", "git", "--force"],
   );
-  const out = (r as { output: { results: unknown } }).output;
-  eq("force — beta installed", out.results, [{ id: "beta", status: "installed" }]);
-  eq("force — beta proc effect fired", f.runs, ["provision-beta"]);
-}
-
-// 4. a throwing apply is captured, not thrown.
-{
-  const f = fakeDeps();
-  const boom: Component[] = [
-    {
-      id: "boom",
-      probe: async () => false,
-      apply: async () => {
-        throw new Error("disk full");
-      },
-    },
-  ];
-  const r = await dispatch(installRegistry({ catalog: boom, deps: () => f.deps }), ["install"]);
-  const out = (r as { output: { results: unknown } }).output;
-  eq("failure — captured as failed+detail", out.results, [
-    { id: "boom", status: "failed", detail: "disk full" },
+  const out = (r as { output: { results: { id: string; status: string }[] } }).output;
+  // git's apply throws ("can't install") → captured as failed, not thrown.
+  eq("force — git apply fails honestly", out.results, [
+    { id: "git", status: "failed", detail: "install git via your system package manager" },
   ]);
 }
 
-// 5. doctor: read-only health, no effects.
+// 4. doctor: read-only health, creates nothing.
 {
-  const f = fakeDeps();
+  const f = fakeSeams();
   const r = await dispatch(installRegistry({ catalog: catalog(), deps: () => f.deps }), ["doctor"]);
   const out = (r as { output: { ok: boolean; checks: unknown } }).output;
-  eq("doctor — ok=false (alpha unsatisfied)", out.ok, false);
+  eq("doctor — ok=false (state-dir absent)", out.ok, false);
   eq("doctor — per-component checks", out.checks, [
-    { id: "alpha", satisfied: false },
-    { id: "beta", satisfied: true },
+    { id: "state-dir", satisfied: false },
+    { id: "git", satisfied: true },
   ]);
-  eq("doctor — read-only, no effects", [f.writes.length, f.runs.length], [0, 0]);
+  eq("doctor — no dir created", f.present.has(DIR), false);
 }
 
-// 6. agent + HTTP surfaces project from the same registry.
+// 5. agent + HTTP surfaces project from the same registry.
 {
-  const reg = installRegistry({ catalog: catalog(), deps: () => fakeDeps().deps });
+  const reg = installRegistry({ catalog: catalog(), deps: () => fakeSeams().deps });
   eq("MCP toolset names", toMcpToolset(reg).map((t) => t.name).sort(), ["doctor", "install"]);
   eq("OpenAPI paths", Object.keys(toOpenApiPaths(reg)).sort(), ["/doctor", "/install"]);
 }

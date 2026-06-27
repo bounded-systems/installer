@@ -2,69 +2,52 @@
  * `bounded-installer` — a thin CLI consumer of the installer library.
  *
  * This is the *consumer*, not the library: it lives outside `src/` and is the
- * one place that holds ambient authority. It wires real node-backed capability
- * seams into `InstallDeps` and dispatches the install/doctor verbs over a small
- * catalog. The library (`src/index.ts`) stays a pure leaf — see its
- * extractability test.
+ * one place that holds ambient authority. It fills `InstallDeps` from the REAL
+ * @bounded-systems capability seams — `fs` (statPath/removeFile), `proc`
+ * (defaultRunner), `host` (homeDir/hostName), `env` (getEnv) — and dispatches
+ * the install/doctor verbs over a small catalog. The library (`src/index.ts`)
+ * stays a pure leaf; effects are governed, flowing through the seams.
  *
- * TOY CATALOG (honest status): the components here are a safe demo — an
- * idempotent state-marker this binary genuinely writes, plus a read-only `git`
- * presence check. The *real* provisioning catalog backed by the published
- * @bounded-systems/{fs,proc,host,env} seam repos is prx-m445.
+ * CATALOG (honest status): the fs seam is read+remove only, so installs run
+ * COMMANDS through `proc`. The demo catalog ensures an XDG state dir (a real,
+ * idempotent `mkdir -p` through the proc seam) and reports git presence. A
+ * fuller provisioning catalog is prx-m445.
  */
-import { promises as fsp } from "node:fs";
-import { spawnSync } from "node:child_process";
-import { homedir, platform as osPlatform, arch as osArch } from "node:os";
-import { dirname } from "node:path";
+import { statPath, removeFile } from "@bounded-systems/fs";
+import { defaultRunner } from "@bounded-systems/proc";
+import { homeDir, hostName } from "@bounded-systems/host";
+import { getEnv } from "@bounded-systems/env";
 
 import { dispatch, render, type AnyVerbSpec } from "@bounded-systems/verbspec";
 import { installRegistry, type Component, type InstallDeps } from "../src/index.ts";
 
-// Real capability seams, backed by node. (In prx these become the published
-// @bounded-systems/{fs,proc,host,env} seams — prx-m445.)
+// Fill the capability slice from the real seams — one-for-one, no node:* here.
 const realDeps = (): InstallDeps => ({
-  fs: {
-    exists: async (p) => {
-      try {
-        await fsp.access(p);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    writeFile: async (p, body) => {
-      await fsp.mkdir(dirname(p), { recursive: true });
-      await fsp.writeFile(p, body);
-    },
-  },
-  proc: {
-    run: async (cmd, args) => {
-      const r = spawnSync(cmd, [...args], { encoding: "utf8" });
-      return { code: r.status ?? 1, stderr: r.stderr ?? "" };
-    },
-  },
-  host: {
-    platform: () => (osPlatform() === "darwin" ? "darwin" : "linux"),
-    arch: () => osArch(),
-  },
-  env: { get: (k) => process.env[k] },
+  fs: { statPath, removeFile },
+  // `check: false` → a non-zero exit comes back as a ProcResult, never throws.
+  proc: { run: (cmd) => defaultRunner([...cmd], { check: false }) },
+  host: { homeDir, hostName },
+  env: { get: getEnv },
 });
 
-const stateDir = `${process.env.XDG_STATE_HOME ?? `${homedir()}/.local/state`}/bounded-installer`;
-const marker = `${stateDir}/installed`;
+const stateDir = (d: InstallDeps): string =>
+  `${d.env.get("XDG_STATE_HOME") ?? `${d.host.homeDir()}/.local/state`}/bounded-installer`;
 
 const catalog: Component[] = [
   {
-    id: "state-marker",
-    summary: "an idempotent marker file under XDG_STATE_HOME (safe demo of the install loop)",
-    probe: (d) => d.fs.exists(marker),
-    apply: (d) => d.fs.writeFile(marker, "installed by bounded-installer\n"),
+    id: "state-dir",
+    summary: "an XDG state dir for bounded-installer (idempotent mkdir via the proc seam)",
+    probe: (d) => statPath(stateDir(d))?.isDirectory === true,
+    apply: (d) => {
+      const r = d.proc.run(["mkdir", "-p", stateDir(d)]);
+      if (r.status !== 0) throw new Error(r.stderr.trim() || "mkdir failed");
+    },
   },
   {
     id: "git",
     summary: "git present on PATH (read-only check)",
-    probe: async (d) => (await d.proc.run("git", ["--version"])).code === 0,
-    apply: async () => {
+    probe: (d) => d.proc.run(["git", "--version"]).status === 0,
+    apply: () => {
       throw new Error("install git via your system package manager");
     },
   },

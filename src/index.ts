@@ -22,18 +22,38 @@ import { defineVerb, type AnyVerbSpec, type Registry } from "@bounded-systems/ve
 
 // ── the capability slice (the seam the consumer fills) ───────────────────────
 //
-// The narrow slice of system authority the installer needs. In prx these bind
-// to the one-sanctioned-access-point `@bounded-systems/*` seams; this package
-// only ever sees the interface, so it can stay a leaf with no ambient power.
+// The narrow slice of system authority the installer needs. The SHAPE mirrors
+// the real `@bounded-systems/*` seams one-for-one so a consumer can fill it
+// straight from them (`@bounded-systems/fs` statPath/removeFile,
+// `@bounded-systems/proc` defaultRunner, `@bounded-systems/host` homeDir/
+// hostName, `@bounded-systems/env` getEnv). This package only ever sees the
+// interface — structural, no seam import — so it stays a leaf with no power.
+//
+// Note the filesystem seam is READ + REMOVE only: there is no write capability,
+// by design (it composes for reads — cas/scout decorate it). So provisioning
+// effects run COMMANDS through `proc` (mkdir, a package manager, …) rather than
+// writing files directly. `probe` reads via `fs`/`proc`; `apply` runs via `proc`.
+
+/** A path's stat, mirroring `@bounded-systems/fs`'s `FileStat`. */
+export type FileStat = {
+  sizeBytes: number;
+  mtimeMs: number;
+  isFile: boolean;
+  isDirectory: boolean;
+};
+
+/** A finished command, mirroring `@bounded-systems/proc`'s `CommandResult`. */
+export type ProcResult = { stdout: string; stderr: string; status: number };
+
 export type InstallDeps = {
+  /** Read-side filesystem (the seam offers no write). */
   fs: {
-    exists: (path: string) => Promise<boolean>;
-    writeFile: (path: string, body: string) => Promise<void>;
+    statPath: (path: string) => FileStat | null;
+    removeFile: (path: string) => void;
   };
-  proc: {
-    run: (cmd: string, args: readonly string[]) => Promise<{ code: number; stderr: string }>;
-  };
-  host: { platform: () => "darwin" | "linux"; arch: () => string };
+  /** Run a command (`[file, ...args]`) and capture it; never throws on non-zero. */
+  proc: { run: (cmd: readonly string[]) => ProcResult };
+  host: { homeDir: () => string; hostName: () => string };
   env: { get: (key: string) => string | undefined };
 };
 
@@ -47,9 +67,9 @@ export type Component = {
   /** Optional human description. */
   summary?: string;
   /** Already-satisfied check. Read-only: no effects, safe in dry-run. */
-  probe: (deps: InstallDeps) => Promise<boolean>;
-  /** The effect. Every line goes through a `deps.*` seam. */
-  apply: (deps: InstallDeps) => Promise<void>;
+  probe: (deps: InstallDeps) => boolean | Promise<boolean>;
+  /** The effect. Every line goes through a `deps.*` seam (commands via `proc`). */
+  apply: (deps: InstallDeps) => void | Promise<void>;
 };
 
 /** Everything a consumer supplies to project an installer: the catalog + the reals. */
